@@ -1,0 +1,70 @@
+name: Build Android Binary
+
+on:
+  workflow_dispatch: # Enables manual triggering of the workflow
+
+jobs:
+  build:
+    name: Build for Android
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: aarch64-linux-android # or armv7-linux-androideabi, x86_64-linux-android, i686-linux-android
+
+      - name: Install Android NDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget unzip
+          wget https://dl.google.com/android/repository/android-ndk-r25c-linux.zip # Replace with the desired NDK version
+          unzip android-ndk-r25c-linux.zip
+          echo "NDK_HOME=$(pwd)/android-ndk-r25c" >> $GITHUB_ENV
+
+      - name: Configure environment
+        shell: bash
+        run: |
+          # Determine the API level to target (e.g., android30)
+          API_LEVEL=android30 # Change this if needed. See available versions under $NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin
+          TARGET=aarch64-linux-android # or armv7-linux-androideabi, x86_64-linux-android, i686-linux-android
+
+          # Set the toolchain path based on the target and API level
+          TOOLCHAIN_PATH="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"  # Adjust linux-x86_64 for your runner OS if needed.
+
+          # Set the compiler, linker, and archiver paths
+          export CC="$TOOLCHAIN_PATH/${TARGET}${API_LEVEL}-clang"
+          export CXX="$TOOLCHAIN_PATH/${TARGET}${API_LEVEL}-clang++"
+          export AR="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/${TARGET}-ar"  # Adjust linux-x86_64 for your runner OS if needed.
+          export RANLIB="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/${TARGET}-ranlib" # Adjust linux-x86_64 for your runner OS if needed.
+          export STRIP="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/${TARGET}-strip" # Adjust linux-x86_64 for your runner OS if needed.
+
+          # Configure Cargo build settings
+          echo "[target.$TARGET]" >> .cargo/config
+          echo "linker = \"$CC\"" >> .cargo/config
+          echo "rustflags = [\"-Clink-arg=-fuse-ld=lld\"]" >> .cargo/config
+
+          echo "ANDROID_NDK_HOME=$NDK_HOME" >> $GITHUB_ENV
+          echo "API_LEVEL=$API_LEVEL" >> $GITHUB_ENV
+          echo "TARGET=$TARGET" >> $GITHUB_ENV
+          echo "CC=$CC" >> $GITHUB_ENV
+          echo "CXX=$CXX" >> $GITHUB_ENV
+
+      - name: Build Android Binary
+        run: |
+          cargo build --target ${{ env.TARGET }} --release
+
+      - name: Package Binary
+        run: |
+          mkdir -p output
+          cp target/${{ env.TARGET }}/release/${{ github.event.repository.name }} output/
+          cd output
+          tar -czvf android_binary.tar.gz ${{ github.event.repository.name }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: android-binary
+          path: output/android_binary.tar.gz
