@@ -1,4 +1,4 @@
-name: Build Android Binary
+name: Build Android Binary v2
 
 on:
   workflow_dispatch: # Enables manual triggering of the workflow
